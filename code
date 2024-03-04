@@ -1,0 +1,369 @@
+#include <ESP32Servo.h>
+
+// Pin Definitions
+const int esp_b_power = 14;
+const int n_trigPin = 32;
+const int n_echoPin = 39;
+const int motor1Pin1 = 18;
+const int motor1Pin2 = 5;
+const int motor2Pin1 = 17;
+const int motor2Pin2 = 16;
+const int f_trigPin = 13;
+const int f_echoPin = 34;
+const int axle_motor = 22;
+const int front_servo = 23;
+const int gearPin1 = 26;
+const int gearPin2 = 25;
+const int node_servo = 15;
+const int moisture_pin = 35;
+const int pump_pin = 33;
+const int trigPin = 32;
+const int echoPin = 39;
+
+// connect to internet
+// #define BLYNK_TEMPLATE_ID "TMPL6IdimdK0o"
+// #define BLYNK_TEMPLATE_NAME "Green Guardian"
+// #define BLYNK_AUTH_TOKEN "7d6S4zPXQ7Q_eQ24I0nog3QkozKSNCDq"
+
+// #include <WiFi.h>
+// #include <WiFiClient.h>
+// #include <BlynkSimpleEsp32.h>
+
+// Your WiFi credentials.
+// Set password to "" for open networks.
+char ssid[] = "wifi ";
+char pass[] = "pasword";
+// #define BLYNK_PRINT Serial
+// Servo Objects
+Servo axle;
+Servo f_servo;
+Servo n_servo;
+Servo nms;
+
+// Function Declarations
+void stepGear();
+void stopGear();
+void stepLeft();
+void stepRight();
+void stepBack();
+int fdss();
+int fds();
+void b_power(int);
+int moveArm();
+void stepGearMotor(int);
+void stopGearMotor();
+int nds();
+void ns();
+void ns_r();
+int soilMoisture();
+void waterpump();
+void moveArmup();
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(motor1Pin1, OUTPUT);
+  pinMode(motor1Pin2, OUTPUT);
+  pinMode(motor2Pin1, OUTPUT);
+  pinMode(motor2Pin2, OUTPUT);
+  pinMode(esp_b_power, OUTPUT);
+  pinMode(gearPin1, OUTPUT);
+  pinMode(gearPin2, OUTPUT);
+}
+
+void loop() {
+  b_power(1);
+  int soilMoistureValue;
+  int front_distance = fds();
+  delay(500);
+  if (front_distance == 0) {
+    stopGear();
+    delay(1000); // Add a delay after stopping the gear
+  } else if (front_distance <= 20) {
+    stopGear();
+    delay(1000); // Add a delay after stopping the gear
+    int armValue = moveArm();
+    Serial.println("this is after arm value");
+    if (armValue == 1) {
+      ns();  // Move the soil moisture sensor down
+      delay(1000);
+      soilMoistureValue = soilMoisture();
+      if (soilMoistureValue == 0) {
+        waterpump();  // Water the soil
+        delay(3000);
+      }
+        ns_r();  // Lift the soil moisture sensor up
+        delay(500);
+        moveArmup();  // Lift the arm up to its rest position
+      Serial.println("Car has reached");
+    } 
+  } else {
+    stepGear(); // Call stepGear() if front_distance is greater than or equal to 21
+    delay(1000); // Add a delay after stepping the gear
+  }
+  delay(500); // Add an overall delay at the end of the loop
+  // sendData(soilMoistureValue);
+  delay(20000);
+}
+
+
+void stepGear() {
+  Serial.println("Step function is activated");
+  axle.attach(axle_motor);
+  axle.write(75);  // Assuming 75 is the desired servo position
+  digitalWrite(motor1Pin1, LOW);
+  digitalWrite(motor1Pin2, HIGH);
+  digitalWrite(motor2Pin1, HIGH);
+  digitalWrite(motor2Pin2, LOW);
+
+  // Continuously check distance and stop when it's less than or equal to 30
+  while (true) {
+    int distance = fds(); // Get the current distance
+    if (distance <= 30) {
+      stopGear(); // Stop gear function if distance is less than or equal to 30
+      break;      // Exit the loop
+    }
+    delay(100); // Wait for 100 milliseconds before checking again
+  }
+  axle.detach(); // Detach the servo
+}
+
+
+void stopGear() {
+  Serial.println("stop  funtion is on");
+  digitalWrite(motor1Pin1, LOW);
+  digitalWrite(motor1Pin2, LOW);
+  digitalWrite(motor2Pin1, LOW);
+  digitalWrite(motor2Pin2, LOW);
+  delay(1000);
+}
+
+void stepLeft() {
+  Serial.println("step left funtion is on");
+  axle.attach(axle_motor);
+  for (int i = 75; i > 30; i--) {
+    axle.write(i);
+    delay(10);
+  }
+  digitalWrite(motor1Pin1, LOW);
+  digitalWrite(motor1Pin2, HIGH);
+  axle.detach();
+  delay(5000);
+}
+
+void stepRight() {
+  Serial.println("step right funtion is on");
+  axle.attach(axle_motor);
+  for (int i = 75; i <= 110; i++) {
+    axle.write(i);
+    delay(10);
+  }
+  digitalWrite(motor2Pin1, HIGH);
+  digitalWrite(motor2Pin2, LOW);
+  delay(5000);
+  axle.detach();
+}
+
+void stepBack() {
+  axle.attach(axle_motor);
+  axle.write(75);
+  delay(300);
+  Serial.println("step back funtion is on");
+  digitalWrite(motor1Pin1, HIGH);
+  digitalWrite(motor1Pin2, LOW);
+  digitalWrite(motor2Pin1, LOW);
+  digitalWrite(motor2Pin2, HIGH);
+  axle.detach();
+  delay(1500);
+}
+
+int fdss() {
+  f_servo.attach(front_servo);
+  delay(500);
+  int position = 1;
+  for (int i = 0; i <= 90; i++) {
+    delay(100);
+    if (i % 45 == 0) {
+      f_servo.write(i);
+      delay(100);
+      int distance = fds();
+      Serial.println("front distance is ");
+      Serial.println(distance);
+      if (distance < 30) {
+        f_servo.detach();
+        return position;
+      } else if (distance == 0) {
+        f_servo.detach();
+        return 0;
+      }
+      position++;
+    }
+  }
+  f_servo.detach();
+  return 5;
+}
+
+int fds() {
+  int duration, distance;
+  pinMode(f_trigPin, OUTPUT);
+  pinMode(f_echoPin, INPUT);
+  digitalWrite(f_trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(f_trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(f_trigPin, LOW);
+  duration = pulseIn(f_echoPin, HIGH);
+  distance = duration * 0.034 / 2;
+  Serial.print("front Distance: ");
+  Serial.println(distance);
+  pinMode(f_trigPin, INPUT);
+  pinMode(f_echoPin, INPUT);
+
+  return distance;
+}
+
+void b_power(int a) {
+  int value = a;
+  if (value == 1) {
+    digitalWrite(esp_b_power, LOW);
+  } else {
+    digitalWrite(esp_b_power, HIGH);
+  }
+  Serial.println("the value of relay for power is ");
+  Serial.println(a);
+}
+
+int moveArm() {
+  int permission = 0;
+  int dis = 0;
+
+  // Continuously monitor the distance until it's less than 9
+  while (!(dis > 0 && dis < 12)) {
+    dis = nds();  // Get the current distance
+
+    if (dis > 50) {
+        stepGearMotor(100);
+        Serial.println("Distance is greater than 50");
+        delay(500);
+    } else if (dis > 20) {
+        stepGearMotor(70);
+        Serial.println("Distance is greater than 25");
+        delay(500);
+    } else if (dis <= 12 && dis > 0) {
+        Serial.println("Distance is less than 12 and greater than 0");
+        stopGearMotor();
+        delay(100);
+        permission = 1;
+        break;  // Exit the loop once permission is granted
+    }
+}
+
+  Serial.print("permission given");
+  Serial.println(permission);
+
+  return permission;
+}
+
+
+void stepGearMotor(int value) {
+  digitalWrite(gearPin1, HIGH);
+  digitalWrite(gearPin2, LOW);
+  delay(value);
+  stopGearMotor();
+}
+
+void stopGearMotor() {
+  Serial.println("Motor stopped");
+  digitalWrite(gearPin1, LOW);
+  digitalWrite(gearPin2, LOW);
+}
+
+int nds() {
+  int distance, duration;
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  duration = pulseIn(echoPin, HIGH);
+  distance = duration * 0.034 / 2;
+  Serial.print("node distance Distance: ");
+  Serial.println(distance);
+  return distance;
+}
+
+void ns() {
+  nms.attach(node_servo);
+  nms.write(10);
+  delay(100);
+  for (int angle = 20; angle <= 150; angle++) {
+    nms.write(angle);
+    delay(10);
+  }
+  nms.detach();
+  delay(100);
+}
+void ns_r() {
+  Serial.println("Node reverse is working");
+  nms.attach(node_servo);
+  nms.write(150);
+  delay(100);
+  for (int angle = 150; angle >= 20; angle--) {
+    nms.write(angle);
+    delay(10);
+  }
+  nms.detach();
+  delay(100);
+}
+
+int soilMoisture() {
+  pinMode(moisture_pin, INPUT);
+  int value = analogRead(moisture_pin);
+  Serial.println("soil moisture is ");
+  Serial.println(value);
+
+  return value;
+}
+
+void waterpump() {
+  digitalWrite(pump_pin, LOW);
+  Serial.println("water pump is on");
+  delay(3000);
+  digitalWrite(pump_pin, HIGH);
+  Serial.println("water pump is off ");
+  delay(1000);
+}
+
+void moveArmup() {
+
+  Serial.println("Up arm ");
+  int dis = nds();
+  if (dis < 25) {
+    // Move the arm up with higher precision when the distance is less than 25
+    stepUpMotor(250);  // Run the motor for 100 milliseconds
+    delay(500);
+  }
+}
+
+void stepUpMotor(int value) {
+  digitalWrite(gearPin1, LOW);
+  digitalWrite(gearPin2, HIGH);
+  delay(value);
+  stopGearMotor();
+}
+// void sendData(int data) {
+//   Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass); // Connect to Blynk
+//   delay(1000); // Wait for connection to establish
+  
+//   // Reading moisture value
+//   int moistureValue = data; // If you're passing the value directly to the function, no need to read it again
+//   // moistureValue = readMoistureSensor(); // This line is not necessary if you're passing the value directly
+  
+//   Blynk.virtualWrite(V0, moistureValue); // Send moisture value to Blynk
+  
+//   Blynk.run(); // Run Blynk loop to process the sent data
+//   delay(1000); // Small delay for processing
+  
+//   Blynk.disconnect(); // Disconnect from Blynk server
+// }
